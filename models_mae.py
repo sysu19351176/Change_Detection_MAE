@@ -169,7 +169,7 @@ class MaskedAutoencoderViT(nn.Module):
         x: (N, L, patch_size**2)
         """
         p = self.patch_embed.patch_size[0]
-        assert imgs.shape[2] == imgs.shape[3] and imgs.shape[2] % p == 0
+        assert imgs.shape[1] == imgs.shape[2] and imgs.shape[2] % p == 0
 
         h = w = imgs.shape[2] // p
         x = imgs.reshape(shape=(imgs.shape[0], 1, h, p, w, p))
