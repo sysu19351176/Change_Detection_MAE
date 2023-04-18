@@ -185,10 +185,7 @@ class MaskedAutoencoderViT(nn.Module):
         mask: (N*256)
 
         '''
-      
-        N=64
-        L=256
-        D=1024
+        N, L, D = x.shape
         label = self.label_patchify(label)
         mask = torch.zeros(N, L, device=x.device)
         # 计算mask
