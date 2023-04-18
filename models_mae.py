@@ -186,6 +186,9 @@ class MaskedAutoencoderViT(nn.Module):
 
         '''
         N, L, D = x.shape
+        print(N)
+        print(L)
+        print(D)
         label = self.label_patchify(label)
         mask = torch.zeros(N, L, device=x.device)
         # 计算mask
@@ -194,6 +197,7 @@ class MaskedAutoencoderViT(nn.Module):
         count_mask_patch=torch.zeros(N, device=x.device)
         max_mask_ratio = 0
         for i in range(N):
+            print("Batch"+i+":")
             for j in range(L):
                 if (label[i][j].any() == 1):  # 一个patch中出现了变化的部分，则mask
                     mask[i][j] = 1
