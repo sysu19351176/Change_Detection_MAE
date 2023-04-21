@@ -16,8 +16,9 @@ import torch
 import torch.nn as nn
 import statistics
 from random import sample
-
-
+import random
+import matplotlib.pyplot as plt
+import torch.nn.functional as F
 from timm.models.vision_transformer import PatchEmbed, Block
 
 from util.pos_embed import get_2d_sincos_pos_embed
@@ -159,17 +160,13 @@ class MaskedAutoencoderViT(nn.Module):
         mask = torch.gather(mask, dim=1, index=ids_restore)
 
         return x_masked, mask, ids_restore
-        
-        
-        
-        
+
     def label_patchify(self, imgs):
         """
         imgs: (N, 1, H, W)
         x: (N, L, patch_size**2)
         """
         p = self.patch_embed.patch_size[0]
-        imgs=imgs.reshape(imgs.shape[0],1,imgs.shape[1],imgs.shape[2])
         assert imgs.shape[2] == imgs.shape[3] and imgs.shape[2] % p == 0
 
         h = w = imgs.shape[2] // p
@@ -179,59 +176,43 @@ class MaskedAutoencoderViT(nn.Module):
         return x
 
     def new_masking(self, x, label):
-        '''
-        x: (N*256*1024)
-        label: (N*256*256) 黑1白0
-        mask: (N*256)
 
-        '''
         N, L, D = x.shape
-        print(N)
-        print(L)
-        print(D)
         label = self.label_patchify(label)
         mask = torch.zeros(N, L, device=x.device)
-        # 计算mask
-        # 遍历每一个batch的每一个patch
+
         mask_ratio = torch.zeros(N, device=x.device)
-        count_mask_patch=torch.zeros(N, device=x.device)
+        count_mask_patch = torch.zeros(N, device=x.device)
         max_mask_ratio = 0
         for i in range(N):
-            print("Batch"+i+":")
             for j in range(L):
                 if (label[i][j].any() == 1):  # 一个patch中出现了变化的部分，则mask
                     mask[i][j] = 1
                     count_mask_patch[i] = count_mask_patch[i] + 1
             mask_ratio[i] = count_mask_patch[i] / L
-            max_mask_ratio = max_mask_ratio + mask_ratio[i]/N
-
+            if(max_mask_ratio<=mask_ratio[i]):
+                max_mask_ratio=mask_ratio[i]
         for i in range(N):
-            if (mask_ratio[i]<=max_mask_ratio):
-                diff=int((max_mask_ratio-mask_ratio[i])*N)  #更改diff个原来为0的mask为1
-                mask_shuffle=torch.argsort(mask[i])   #前mask_ratio[i]*N个为0的索引，后面为mask的为1的索引
-                mask_shuffle_0=mask_shuffle[:int((1-mask_ratio[i])*N)]   #取出对应为0的索引的mask
-                mask_shuffle_0_list=mask_shuffle_0.cpu().numpy().tolist()
-                add_mask_id=sample(mask_shuffle_0_list,diff)   #从为0的索引里随意取出diff个0的索引
-                
+            if (mask_ratio[i] <= max_mask_ratio):
+                diff = int((max_mask_ratio - mask_ratio[i]) * L)  # 更改diff个原来为0的mask为1
+                mask_shuffle = torch.argsort(mask[i])  # 前mask_ratio[i]*N个为0的索引，后面为mask的为1的索引
+
+                mask_shuffle_0 = mask_shuffle[:int((1 - mask_ratio[i]) * L)]  # 取出对应为0的索引的mask
+
+                mask_shuffle_0_list = mask_shuffle_0.cpu().numpy().tolist()
+                add_mask_id = sample(mask_shuffle_0_list, diff)  # 从为0的索引里随意取出diff个0的索引
+
                 for j in range(diff):
-                    mask[i][add_mask_id[j]]=1    #更改这differ个0为1,剩下的没有改的0则为ids_keep
-            else:
-                diff=int((mask_ratio[i]-max_mask_ratio)*N)  #更改diff个原来的1为的mask为0
-                mask_shuffle=torch.argsort(mask[i])   #前mask_ratio[i]*N个为0的索引，后面为mask的为1的索引
-                mask_shuffle_1=mask_shuffle[int((1-mask_ratio[i])*N):]   #取出对应为1的索引的mask
-                mask_shuffle_1_list=mask_shuffle_1.cpu().numpy().tolist()
-                add_mask_id=sample(mask_shuffle_1_list,diff)   #从为1的索引里随意取出diff个1的索引
-                for j in range(diff):
-                    mask[i][add_mask_id[j]]=0     #更改这differ个1为0
+
+                    mask[i][add_mask_id[j]] = 1  # 更改这differ个0为1,剩下的没有改的0则为ids_keep
 
         # 更改后batch中的每一张图片，都有相同的0和1的个数
-        #再进行sort，则为0的patch的id在前面，作为ids_keep
-        mask_sort_after_polish=torch.argsort(mask, dim=1)
-        ids_keep=mask_sort_after_polish[:, :int((1-max_mask_ratio)*N)]
-        x_masked=torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
-        ids_restore=torch.argsort(mask_sort_after_polish, dim=1)
+        # 再进行sort，则为0的patch的id在前面，作为ids_keep
+        mask_sort_after_polish = torch.argsort(mask, dim=1)
+        ids_keep = mask_sort_after_polish[:, :int((1 - max_mask_ratio) * L)]
+        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
+        ids_restore = torch.argsort(mask_sort_after_polish, dim=1)
         return x_masked, mask, ids_restore
-
 
     def forward_encoder(self, x, label):
         # embed patches
@@ -243,16 +224,14 @@ class MaskedAutoencoderViT(nn.Module):
         # # masking: length -> length * mask_ratio
         # x, mask, ids_restore = self.random_masking(x, mask_ratio)
 
-        #zhang
-        #masking: mask the parts of T1 which are changed compared with T2
+        # zhang
+        # masking: mask the parts of T1 which are changed compared with T2
         x, mask, ids_restore = self.new_masking(x_A, label)
-
-        # append cls token
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
         cls_tokens = cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
 
-        # apply Transformer blocks
+        #apply Transformer blocks
         for blk in self.blocks:
             x = blk(x)
         x = self.norm(x)
@@ -285,19 +264,25 @@ class MaskedAutoencoderViT(nn.Module):
 
         return x
 
-    def forward_loss(self, imgs, pred, mask):
+    def forward_loss(self, imgs, image_t2, pred, mask):
         """
         imgs: [N, 3, H, W]
         pred: [N, L, p*p*3]
         mask: [N, L], 0 is keep, 1 is remove,
         """
-        target = self.patchify(imgs)
+        target = self.patchify(image_t2)
+        un_target=self.patchify(imgs)
         if self.norm_pix_loss:
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)
             target = (target - mean) / (var + 1.e-6) ** .5
+            mean_1 = un_target.mean(dim=-1, keepdim=True)
+            var_1 = un_target.var(dim=-1, keepdim=True)
+            un_target = (un_target - mean_1) / (var_1 + 1.e-6) ** .5
 
-        loss = (pred - target) ** 2
+        loss_1 = (pred - target) ** 2
+        loss_2=F.kl_div(pred.softmax(-1).log(), un_target.softmax(-1), reduction='sum')
+        loss=loss_1+1/loss_2.cuda()
         loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
 
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
@@ -306,7 +291,7 @@ class MaskedAutoencoderViT(nn.Module):
     def forward(self, imgs, image_t2, lable):
         latent, mask, ids_restore = self.forward_encoder(imgs, lable)
         pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
-        loss = self.forward_loss(image_t2, pred, mask)
+        loss = self.forward_loss(imgs,image_t2, pred, mask)
         return loss, pred, mask
 
 
