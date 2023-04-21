@@ -265,25 +265,19 @@ class MaskedAutoencoderViT(nn.Module):
 
         return x
 
-    def forward_loss(self, imgs, image_t2, pred, mask):
+    def forward_loss(self, imgs, pred, mask):
         """
         imgs: [N, 3, H, W]
         pred: [N, L, p*p*3]
-        mask: [N, L], 0 is keep, 1 is remove,
+        mask: [N, L], 0 is keep, 1 is remove, 
         """
-        target = self.patchify(image_t2)
-        un_target=self.patchify(imgs)
+        target = self.patchify(imgs)
         if self.norm_pix_loss:
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)
-            target = (target - mean) / (var + 1.e-6) ** .5
-            mean_1 = un_target.mean(dim=-1, keepdim=True)
-            var_1 = un_target.var(dim=-1, keepdim=True)
-            un_target = (un_target - mean_1) / (var_1 + 1.e-6) ** .5
+            target = (target - mean) / (var + 1.e-6)**.5
 
-        loss_1 = (pred - target) ** 2
-        loss_2=F.kl_div(pred.softmax(-1).log(), un_target.softmax(-1), reduction='sum')
-        loss=loss_1+1/loss_2.cuda()
+        loss = (pred - target) ** 2
         loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
 
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
