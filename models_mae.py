@@ -237,7 +237,7 @@ class MaskedAutoencoderViT(nn.Module):
             x = blk(x)
         x = self.norm(x)
 
-        return x, mask, ids_restore,x_
+        return x, mask, ids_restore,x_,x_A
 
     def forward_decoder(self, x, ids_restore):
         # embed tokens
