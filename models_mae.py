@@ -237,7 +237,7 @@ class MaskedAutoencoderViT(nn.Module):
             x = blk(x)
         x = self.norm(x)
 
-        return x, mask, ids_restore,x_,x_A
+        return x, mask, ids_restore, x_, x_A
 
     def forward_decoder(self, x, ids_restore):
         # embed tokens
@@ -287,7 +287,7 @@ class MaskedAutoencoderViT(nn.Module):
         latent, mask, ids_restore,x_,x_A = self.forward_encoder(imgs, lable)
         pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
         loss = self.forward_loss(imgs,pred, mask)
-        return loss, pred, mask, x_,x_A
+        return loss, pred, mask, x_, x_A
 
 
 def mae_vit_base_patch16_dec512d8b(**kwargs):
