@@ -227,17 +227,17 @@ class MaskedAutoencoderViT(nn.Module):
 
         # zhang
         # masking: mask the parts of T1 which are changed compared with T2
-        x, mask, ids_restore = self.new_masking(x_A, label)
+        x_, mask, ids_restore = self.new_masking(x_A, label)
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
-        cls_tokens = cls_token.expand(x.shape[0], -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
+        cls_tokens = cls_token.expand(x_.shape[0], -1, -1)
+        x = torch.cat((cls_tokens, x_), dim=1)
 
         #apply Transformer blocks
         for blk in self.blocks:
             x = blk(x)
         x = self.norm(x)
 
-        return x, mask, ids_restore
+        return x, mask, ids_restore,x_
 
     def forward_decoder(self, x, ids_restore):
         # embed tokens
@@ -284,10 +284,10 @@ class MaskedAutoencoderViT(nn.Module):
         return loss
 
     def forward(self, imgs, image_t2, lable):
-        latent, mask, ids_restore = self.forward_encoder(imgs, lable)
+        latent, mask, ids_restore,x_ = self.forward_encoder(imgs, lable)
         pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
         loss = self.forward_loss(imgs,pred, mask)
-        return loss, pred, mask, latent
+        return loss, pred, mask, x_
 
 
 def mae_vit_base_patch16_dec512d8b(**kwargs):
